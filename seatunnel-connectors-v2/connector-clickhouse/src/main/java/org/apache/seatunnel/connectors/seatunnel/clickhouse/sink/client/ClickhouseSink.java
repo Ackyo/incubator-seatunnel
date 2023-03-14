@@ -24,6 +24,7 @@ import static org.apache.seatunnel.connectors.seatunnel.clickhouse.config.Clickh
 import static org.apache.seatunnel.connectors.seatunnel.clickhouse.config.ClickhouseConfig.FIELDS;
 import static org.apache.seatunnel.connectors.seatunnel.clickhouse.config.ClickhouseConfig.HOST;
 import static org.apache.seatunnel.connectors.seatunnel.clickhouse.config.ClickhouseConfig.PASSWORD;
+import static org.apache.seatunnel.connectors.seatunnel.clickhouse.config.ClickhouseConfig.PRE_SQL;
 import static org.apache.seatunnel.connectors.seatunnel.clickhouse.config.ClickhouseConfig.PRIMARY_KEY;
 import static org.apache.seatunnel.connectors.seatunnel.clickhouse.config.ClickhouseConfig.SHARDING_KEY;
 import static org.apache.seatunnel.connectors.seatunnel.clickhouse.config.ClickhouseConfig.SPLIT_MODE;
@@ -59,9 +60,12 @@ import org.apache.seatunnel.connectors.seatunnel.clickhouse.util.ClickhouseUtil;
 import org.apache.seatunnel.shade.com.typesafe.config.Config;
 import org.apache.seatunnel.shade.com.typesafe.config.ConfigFactory;
 
+import com.clickhouse.client.ClickHouseException;
 import com.clickhouse.client.ClickHouseNode;
+import com.clickhouse.client.ClickHouseResponse;
 import com.google.auto.service.AutoService;
 import com.google.common.collect.ImmutableMap;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -71,6 +75,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 
+@Slf4j
 @AutoService(SeaTunnelSink.class)
 public class ClickhouseSink implements SeaTunnelSink<SeaTunnelRow, ClickhouseSinkState, CKCommitInfo, CKAggCommitInfo> {
 
@@ -206,6 +211,18 @@ public class ClickhouseSink implements SeaTunnelSink<SeaTunnelRow, ClickhouseSin
             .supportUpsert(supportUpsert)
             .allowExperimentalLightweightDelete(allowExperimentalLightweightDelete)
             .build();
+
+        if (config.hasPath(PRE_SQL.key())){
+            ClickhouseProxy clickhouseProxy = new ClickhouseProxy(
+                option.getShardMetadata().getDefaultShard().getNode());
+            try (ClickHouseResponse response = clickhouseProxy.getClickhouseConnection().query(config.getString(PRE_SQL.key())).executeAndWait()) {
+                response.records().forEach(r -> log.info(r.toString()));
+            } catch (ClickHouseException e) {
+                throw new ClickhouseConnectorException(CommonErrorCode.TABLE_SCHEMA_GET_FAILED, "Cannot get table schema from clickhouse", e);
+            }
+
+            clickhouseProxy.close();
+        }
     }
 
     @Override

@@ -21,6 +21,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 public class SeaTunnelRowType implements CompositeType<SeaTunnelRow> {
     private static final long serialVersionUID = 2L;
@@ -78,7 +79,7 @@ public class SeaTunnelRowType implements CompositeType<SeaTunnelRow> {
 
     public int indexOf(String fieldName) {
         for (int i = 0; i < fieldNames.length; i++) {
-            if (fieldNames[i].equals(fieldName)) {
+            if (fieldNames[i].equals(fieldName.toLowerCase(Locale.ROOT))) {
                 return i;
             }
         }

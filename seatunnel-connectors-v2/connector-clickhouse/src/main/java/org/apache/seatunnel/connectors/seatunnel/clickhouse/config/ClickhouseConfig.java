@@ -61,6 +61,12 @@ public class ClickhouseConfig {
         .noDefaultValue().withDescription("Clickhouse database name");
 
     /**
+     * Clickhouse pre sql
+     */
+    public static final Option<String> PRE_SQL = Options.key("pre_sql").stringType()
+        .noDefaultValue().withDescription("Clickhouse pre sql");
+
+    /**
      * Clickhouse server username
      */
     public static final Option<String> USERNAME = Options.key("username").stringType()
