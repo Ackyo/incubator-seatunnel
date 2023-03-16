@@ -29,6 +29,7 @@ import org.apache.seatunnel.common.config.CheckConfigUtil;
 import org.apache.seatunnel.common.config.CheckResult;
 import org.apache.seatunnel.common.constants.PluginType;
 import org.apache.seatunnel.common.exception.CommonErrorCode;
+import org.apache.seatunnel.connectors.seatunnel.common.schema.SeaTunnelSchema;
 import org.apache.seatunnel.connectors.seatunnel.file.config.BaseSourceConfig;
 import org.apache.seatunnel.connectors.seatunnel.file.config.FileFormat;
 import org.apache.seatunnel.connectors.seatunnel.file.hdfs.source.BaseHdfsFileSource;
@@ -37,15 +38,22 @@ import org.apache.seatunnel.connectors.seatunnel.hive.exception.HiveConnectorErr
 import org.apache.seatunnel.connectors.seatunnel.hive.exception.HiveConnectorException;
 
 import org.apache.seatunnel.shade.com.typesafe.config.Config;
+import org.apache.seatunnel.shade.com.typesafe.config.ConfigValue;
 import org.apache.seatunnel.shade.com.typesafe.config.ConfigValueFactory;
 
 import com.google.auto.service.AutoService;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.Table;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
+@Slf4j
 @AutoService(SeaTunnelSource.class)
 public class HiveSource extends BaseHdfsFileSource {
     private Table tableInformation;
@@ -66,6 +74,20 @@ public class HiveSource extends BaseHdfsFileSource {
         }
         Pair<String[], Table> tableInfo = HiveConfig.getTableInfo(pluginConfig);
         tableInformation = tableInfo.getRight();
+        if (!pluginConfig.hasPath(SeaTunnelSchema.SCHEMA.key())) {
+            List<FieldSchema> fieldSchemas = tableInformation.getSd().getCols();
+
+            Map<String, String> fieldsMap = new HashMap<>();
+            for (FieldSchema fieldSchema : fieldSchemas) {
+                fieldsMap.put(fieldSchema.getName(), fieldSchema.getType());
+            }
+
+            Map<String, ConfigValue> fieldsConf = new HashMap<>();
+            fieldsConf.put("fields", ConfigValueFactory.fromMap(fieldsMap));
+
+            pluginConfig = pluginConfig.withValue("schema", ConfigValueFactory.fromMap(fieldsConf));
+        }
+
         String inputFormat = tableInformation.getSd().getInputFormat();
         if (TEXT_INPUT_FORMAT_CLASSNAME.equals(inputFormat)) {
             pluginConfig = pluginConfig.withValue(BaseSourceConfig.FILE_TYPE.key(),

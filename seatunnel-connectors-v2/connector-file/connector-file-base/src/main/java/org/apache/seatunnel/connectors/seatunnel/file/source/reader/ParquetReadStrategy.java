@@ -29,9 +29,12 @@ import org.apache.seatunnel.api.table.type.SeaTunnelRow;
 import org.apache.seatunnel.api.table.type.SeaTunnelRowType;
 import org.apache.seatunnel.api.table.type.SqlType;
 import org.apache.seatunnel.common.exception.CommonErrorCode;
+import org.apache.seatunnel.connectors.seatunnel.common.schema.SeaTunnelSchema;
 import org.apache.seatunnel.connectors.seatunnel.file.config.HadoopConf;
 import org.apache.seatunnel.connectors.seatunnel.file.exception.FileConnectorErrorCode;
 import org.apache.seatunnel.connectors.seatunnel.file.exception.FileConnectorException;
+
+import org.apache.seatunnel.shade.com.typesafe.config.Config;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.Conversions;
@@ -203,28 +206,34 @@ public class ParquetReadStrategy extends AbstractReadStrategy {
     @Override
     public SeaTunnelRowType getSeaTunnelRowTypeInfo(HadoopConf hadoopConf, String path) throws FileConnectorException {
         Path filePath = new Path(path);
-        ParquetMetadata metadata;
-        try {
-            HadoopInputFile hadoopInputFile = HadoopInputFile.fromPath(filePath, getConfiguration(hadoopConf));
-            ParquetFileReader reader = ParquetFileReader.open(hadoopInputFile);
-            metadata = reader.getFooter();
-            reader.close();
-        } catch (IOException e) {
-            String errorMsg = String.format("Create parquet reader for this file [%s] failed", path);
-            throw new FileConnectorException(CommonErrorCode.READER_OPERATION_FAILED, errorMsg, e);
+        if (pluginConfig.hasPath(SeaTunnelSchema.SCHEMA.key())){
+            Config schema = pluginConfig.getConfig(SeaTunnelSchema.SCHEMA.key());
+            seaTunnelRowType = SeaTunnelSchema.buildWithConfig(schema).getSeaTunnelRowType();
+        } else {
+            ParquetMetadata metadata;
+            try {
+                HadoopInputFile hadoopInputFile = HadoopInputFile.fromPath(filePath, getConfiguration(hadoopConf));
+                ParquetFileReader reader = ParquetFileReader.open(hadoopInputFile);
+                metadata = reader.getFooter();
+                reader.close();
+            } catch (IOException e) {
+                String errorMsg = String.format("Create parquet reader for this file [%s] failed", path);
+                throw new FileConnectorException(CommonErrorCode.READER_OPERATION_FAILED, errorMsg, e);
+            }
+            FileMetaData fileMetaData = metadata.getFileMetaData();
+            MessageType schema = fileMetaData.getSchema();
+            int fieldCount = schema.getFieldCount();
+            String[] fields = new String[fieldCount];
+            SeaTunnelDataType<?>[] types = new SeaTunnelDataType[fieldCount];
+            for (int i = 0; i < fieldCount; i++) {
+                fields[i] = schema.getFieldName(i);
+                Type type = schema.getType(i);
+                SeaTunnelDataType<?> fieldType = parquetType2SeaTunnelType(type);
+                types[i] = fieldType;
+            }
+            seaTunnelRowType = new SeaTunnelRowType(fields, types);
         }
-        FileMetaData fileMetaData = metadata.getFileMetaData();
-        MessageType schema = fileMetaData.getSchema();
-        int fieldCount = schema.getFieldCount();
-        String[] fields = new String[fieldCount];
-        SeaTunnelDataType<?>[] types = new SeaTunnelDataType[fieldCount];
-        for (int i = 0; i < fieldCount; i++) {
-            fields[i] = schema.getFieldName(i);
-            Type type = schema.getType(i);
-            SeaTunnelDataType<?> fieldType = parquetType2SeaTunnelType(type);
-            types[i] = fieldType;
-        }
-        seaTunnelRowType = new SeaTunnelRowType(fields, types);
+
         seaTunnelRowTypeWithPartition = mergePartitionTypes(path, seaTunnelRowType);
         return getActualSeaTunnelRowTypeInfo();
     }

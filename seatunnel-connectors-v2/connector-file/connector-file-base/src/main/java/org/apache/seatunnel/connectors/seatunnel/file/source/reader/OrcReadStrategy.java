@@ -28,9 +28,12 @@ import org.apache.seatunnel.api.table.type.SeaTunnelDataType;
 import org.apache.seatunnel.api.table.type.SeaTunnelRow;
 import org.apache.seatunnel.api.table.type.SeaTunnelRowType;
 import org.apache.seatunnel.common.exception.CommonErrorCode;
+import org.apache.seatunnel.connectors.seatunnel.common.schema.SeaTunnelSchema;
 import org.apache.seatunnel.connectors.seatunnel.file.config.HadoopConf;
 import org.apache.seatunnel.connectors.seatunnel.file.exception.FileConnectorErrorCode;
 import org.apache.seatunnel.connectors.seatunnel.file.exception.FileConnectorException;
+
+import org.apache.seatunnel.shade.com.typesafe.config.Config;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
@@ -121,14 +124,20 @@ public class OrcReadStrategy extends AbstractReadStrategy {
         OrcFile.ReaderOptions readerOptions = OrcFile.readerOptions(configuration);
         Path dstDir = new Path(path);
         try (Reader reader = OrcFile.createReader(dstDir, readerOptions)) {
-            TypeDescription schema = reader.getSchema();
-            String[] fields = new String[schema.getFieldNames().size()];
-            SeaTunnelDataType<?>[] types = new SeaTunnelDataType[schema.getFieldNames().size()];
-            for (int i = 0; i < schema.getFieldNames().size(); i++) {
-                fields[i] = schema.getFieldNames().get(i);
-                types[i] = orcDataType2SeaTunnelDataType(schema.getChildren().get(i));
+            if (pluginConfig.hasPath(SeaTunnelSchema.SCHEMA.key())){
+                Config schema = pluginConfig.getConfig(SeaTunnelSchema.SCHEMA.key());
+                seaTunnelRowType = SeaTunnelSchema.buildWithConfig(schema).getSeaTunnelRowType();
+            } else {
+                TypeDescription schema = reader.getSchema();
+                String[] fields = new String[schema.getFieldNames().size()];
+                SeaTunnelDataType<?>[] types = new SeaTunnelDataType[schema.getFieldNames().size()];
+                for (int i = 0; i < schema.getFieldNames().size(); i++) {
+                    fields[i] = schema.getFieldNames().get(i);
+                    types[i] = orcDataType2SeaTunnelDataType(schema.getChildren().get(i));
+                }
+                seaTunnelRowType = new SeaTunnelRowType(fields, types);
             }
-            seaTunnelRowType = new SeaTunnelRowType(fields, types);
+
             seaTunnelRowTypeWithPartition = mergePartitionTypes(path, seaTunnelRowType);
             return getActualSeaTunnelRowTypeInfo();
         } catch (IOException e) {
