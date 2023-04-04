@@ -19,6 +19,7 @@ package org.apache.seatunnel.api.table.type;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -75,7 +76,7 @@ public class SeaTunnelRowType implements CompositeType<SeaTunnelRow> {
 
     public int indexOf(String fieldName) {
         for (int i = 0; i < fieldNames.length; i++) {
-            if (fieldNames[i].equals(fieldName)) {
+            if (fieldNames[i].equals(fieldName.toLowerCase(Locale.ROOT))) {
                 return i;
             }
         }

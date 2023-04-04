@@ -55,6 +55,7 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 @AutoService(SeaTunnelSource.class)
@@ -152,7 +153,7 @@ public class JdbcSource
                     jdbcDialect.getResultSetMetaData(conn, jdbcSourceConfig);
             for (int i = 1; i <= resultSetMetaData.getColumnCount(); i++) {
                 // Support AS syntax
-                fieldNames.add(resultSetMetaData.getColumnLabel(i));
+                fieldNames.add(resultSetMetaData.getColumnLabel(i).toLowerCase(Locale.ROOT));
                 seaTunnelDataTypes.add(jdbcDialectTypeMapper.mapping(resultSetMetaData, i));
             }
         } catch (Exception e) {
