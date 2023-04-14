@@ -17,6 +17,7 @@
 
 package org.apache.seatunnel.transform.sqlengine.zeta;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.seatunnel.api.table.type.SeaTunnelDataType;
 import org.apache.seatunnel.api.table.type.SeaTunnelRow;
 import org.apache.seatunnel.api.table.type.SeaTunnelRowType;
@@ -39,6 +40,7 @@ import net.sf.jsqlparser.statement.select.SelectItem;
 
 import java.util.List;
 
+@Slf4j
 public class ZetaSQLEngine implements SQLEngine {
     private String inputTableName;
 
@@ -93,14 +95,15 @@ public class ZetaSQLEngine implements SQLEngine {
             FromItem fromItem = selectBody.getFromItem();
             if (fromItem instanceof Table) {
                 Table table = (Table) fromItem;
-                if (table.getSchemaName() != null) {
-                    throw new IllegalArgumentException("Unsupported schema syntax");
-                }
+//                if (table.getSchemaName() != null) {
+//                    throw new IllegalArgumentException("Unsupported schema syntax");
+//                }
                 if (table.getAlias() != null) {
                     throw new IllegalArgumentException("Unsupported table alias name syntax");
                 }
                 String tableName = table.getName();
-                if (!inputTableName.equalsIgnoreCase(tableName)) {
+                if (!inputTableName.equalsIgnoreCase(tableName)
+                    && !inputTableName.equalsIgnoreCase(String.format("%s.%s", table.getSchemaName(),tableName))) {
                     throw new IllegalArgumentException(
                             String.format("Table name: %s not found", tableName));
                 }

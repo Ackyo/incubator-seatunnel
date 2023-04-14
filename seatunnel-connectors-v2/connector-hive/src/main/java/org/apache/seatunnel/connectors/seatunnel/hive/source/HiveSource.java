@@ -17,12 +17,24 @@
 
 package org.apache.seatunnel.connectors.seatunnel.hive.source;
 
-import org.apache.seatunnel.shade.com.fasterxml.jackson.databind.node.ObjectNode;
-import org.apache.seatunnel.shade.com.typesafe.config.Config;
-import org.apache.seatunnel.shade.com.typesafe.config.ConfigFactory;
-import org.apache.seatunnel.shade.com.typesafe.config.ConfigRenderOptions;
-import org.apache.seatunnel.shade.com.typesafe.config.ConfigValueFactory;
+import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
+import static org.apache.seatunnel.api.table.catalog.CatalogTableUtil.SCHEMA;
+import static org.apache.seatunnel.connectors.seatunnel.file.config.BaseSourceConfig.FILE_FORMAT_TYPE;
+import static org.apache.seatunnel.connectors.seatunnel.file.config.BaseSourceConfig.FILE_PATH;
+import static org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig.ORC_INPUT_FORMAT_CLASSNAME;
+import static org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig.PARQUET_INPUT_FORMAT_CLASSNAME;
+import static org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig.TEXT_INPUT_FORMAT_CLASSNAME;
 
+import com.google.auto.service.AutoService;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.hive.metastore.api.FieldSchema;
+import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.seatunnel.api.common.PrepareFailException;
 import org.apache.seatunnel.api.common.SeaTunnelAPIErrorCode;
 import org.apache.seatunnel.api.source.SeaTunnelSource;
@@ -38,27 +50,13 @@ import org.apache.seatunnel.connectors.seatunnel.file.hdfs.source.BaseHdfsFileSo
 import org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig;
 import org.apache.seatunnel.connectors.seatunnel.hive.exception.HiveConnectorErrorCode;
 import org.apache.seatunnel.connectors.seatunnel.hive.exception.HiveConnectorException;
+import org.apache.seatunnel.shade.com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.seatunnel.shade.com.typesafe.config.Config;
+import org.apache.seatunnel.shade.com.typesafe.config.ConfigFactory;
+import org.apache.seatunnel.shade.com.typesafe.config.ConfigRenderOptions;
+import org.apache.seatunnel.shade.com.typesafe.config.ConfigValueFactory;
 
-import org.apache.commons.lang3.tuple.Pair;
-import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.metastore.api.Table;
-
-import com.google.auto.service.AutoService;
-
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
-import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
-import static org.apache.seatunnel.api.table.catalog.CatalogTableUtil.SCHEMA;
-import static org.apache.seatunnel.connectors.seatunnel.file.config.BaseSourceConfig.FILE_FORMAT_TYPE;
-import static org.apache.seatunnel.connectors.seatunnel.file.config.BaseSourceConfig.FILE_PATH;
-import static org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig.ORC_INPUT_FORMAT_CLASSNAME;
-import static org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig.PARQUET_INPUT_FORMAT_CLASSNAME;
-import static org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig.TEXT_INPUT_FORMAT_CLASSNAME;
-
+@Slf4j
 @AutoService(SeaTunnelSource.class)
 public class HiveSource extends BaseHdfsFileSource {
     private Table tableInformation;
@@ -123,6 +121,17 @@ public class HiveSource extends BaseHdfsFileSource {
         Pair<String[], Table> tableInfo = HiveConfig.getTableInfo(pluginConfig);
         tableInformation = tableInfo.getRight();
         String inputFormat = tableInformation.getSd().getInputFormat();
+
+        Map<String, Object> schema = parseSchema(tableInformation);
+        for (FieldSchema partitionKey : tableInformation.getPartitionKeys()) {
+            ((LinkedHashMap<String, Object>) schema.get("fields")).put(partitionKey.getName(), partitionKey.getType());
+        }
+
+        ConfigRenderOptions options = ConfigRenderOptions.concise();
+        String render = pluginConfig.root().render(options);
+        ObjectNode jsonNodes = JsonUtils.parseObject(render);
+        jsonNodes.putPOJO(SCHEMA.key(), schema);
+        pluginConfig = ConfigFactory.parseString(jsonNodes.toString());
         if (TEXT_INPUT_FORMAT_CLASSNAME.equals(inputFormat)) {
             pluginConfig =
                     pluginConfig.withValue(
@@ -131,12 +140,6 @@ public class HiveSource extends BaseHdfsFileSource {
             // Build schema from hive table information
             // Because the entrySet in typesafe config couldn't keep key-value order
             // So use jackson to keep key-value order
-            Map<String, Object> schema = parseSchema(tableInformation);
-            ConfigRenderOptions options = ConfigRenderOptions.concise();
-            String render = pluginConfig.root().render(options);
-            ObjectNode jsonNodes = JsonUtils.parseObject(render);
-            jsonNodes.putPOJO(SCHEMA.key(), schema);
-            pluginConfig = ConfigFactory.parseString(jsonNodes.toString());
         } else if (PARQUET_INPUT_FORMAT_CLASSNAME.equals(inputFormat)) {
             pluginConfig =
                     pluginConfig.withValue(

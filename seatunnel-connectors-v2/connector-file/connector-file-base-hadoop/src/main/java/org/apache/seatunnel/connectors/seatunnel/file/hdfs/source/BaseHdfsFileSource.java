@@ -17,8 +17,10 @@
 
 package org.apache.seatunnel.connectors.seatunnel.file.hdfs.source;
 
-import org.apache.seatunnel.shade.com.typesafe.config.Config;
+import static org.apache.seatunnel.connectors.seatunnel.file.config.FileFormat.ORC;
+import static org.apache.seatunnel.connectors.seatunnel.file.config.FileFormat.PARQUET;
 
+import java.io.IOException;
 import org.apache.seatunnel.api.common.PrepareFailException;
 import org.apache.seatunnel.api.common.SeaTunnelAPIErrorCode;
 import org.apache.seatunnel.api.table.catalog.CatalogTableUtil;
@@ -34,8 +36,7 @@ import org.apache.seatunnel.connectors.seatunnel.file.exception.FileConnectorExc
 import org.apache.seatunnel.connectors.seatunnel.file.hdfs.source.config.HdfsSourceConfig;
 import org.apache.seatunnel.connectors.seatunnel.file.source.BaseFileSource;
 import org.apache.seatunnel.connectors.seatunnel.file.source.reader.ReadStrategyFactory;
-
-import java.io.IOException;
+import org.apache.seatunnel.shade.com.typesafe.config.Config;
 
 public abstract class BaseHdfsFileSource extends BaseFileSource {
 
@@ -92,7 +93,8 @@ public abstract class BaseHdfsFileSource extends BaseFileSource {
                                 .getString(HdfsSourceConfig.FILE_FORMAT_TYPE.key())
                                 .toUpperCase());
         // only json text csv type support user-defined schema now
-        if (pluginConfig.hasPath(CatalogTableUtil.SCHEMA.key())) {
+        if (pluginConfig.hasPath(CatalogTableUtil.SCHEMA.key()) && !fileFormat.equals(ORC)
+            && !fileFormat.equals(PARQUET)) {
             switch (fileFormat) {
                 case CSV:
                 case TEXT:
@@ -102,11 +104,11 @@ public abstract class BaseHdfsFileSource extends BaseFileSource {
                     readStrategy.setSeaTunnelRowTypeInfo(userDefinedSchema);
                     rowType = readStrategy.getActualSeaTunnelRowTypeInfo();
                     break;
-                case ORC:
-                case PARQUET:
-                    throw new FileConnectorException(
-                            CommonErrorCode.UNSUPPORTED_OPERATION,
-                            "SeaTunnel does not support user-defined schema for [parquet, orc] files");
+//                case ORC:
+//                case PARQUET:
+//                    throw new FileConnectorException(
+//                            CommonErrorCode.UNSUPPORTED_OPERATION,
+//                            "SeaTunnel does not support user-defined schema for [parquet, orc] files");
                 default:
                     // never got in there
                     throw new FileConnectorException(
