@@ -17,6 +17,8 @@
 
 package org.apache.seatunnel.connectors.seatunnel.file.source.reader;
 
+import static org.apache.seatunnel.api.table.catalog.CatalogTableUtil.COLUMNS;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
@@ -53,7 +55,6 @@ import org.apache.parquet.schema.OriginalType;
 import org.apache.parquet.schema.Type;
 import org.apache.seatunnel.api.source.Collector;
 import org.apache.seatunnel.api.table.catalog.CatalogTableUtil;
-import org.apache.seatunnel.api.table.catalog.Column;
 import org.apache.seatunnel.api.table.type.ArrayType;
 import org.apache.seatunnel.api.table.type.BasicType;
 import org.apache.seatunnel.api.table.type.DecimalType;
@@ -90,6 +91,7 @@ public class ParquetReadStrategy extends AbstractReadStrategy {
             throw new FileConnectorException(FileConnectorErrorCode.FILE_TYPE_INVALID, errorMsg);
         }
         Path filePath = new Path(path);
+        this.getSeaTunnelRowTypeInfo(hadoopConf, path); // files have different structure with hive
         Map<String, String> partitionsMap = parsePartitionsByPath(path);
         HadoopInputFile hadoopInputFile = HadoopInputFile.fromPath(filePath, getConfiguration());
         int fieldsCount = seaTunnelRowType.getTotalFields();
@@ -114,7 +116,7 @@ public class ParquetReadStrategy extends AbstractReadStrategy {
                     fields = new Object[fieldsCount];
                 }
                 for (int i = 0; i < fieldsCount; i++) {
-                    Object data = record.get(indexes[i]);
+                    Object data = indexes[i] == -1 ? null : record.get(indexes[i]);
                     fields[i] = resolveObject(data, seaTunnelRowType.getFieldType(i));
                 }
                 SeaTunnelRow seaTunnelRow = new SeaTunnelRow(fields);
@@ -238,28 +240,46 @@ public class ParquetReadStrategy extends AbstractReadStrategy {
         }
         FileMetaData fileMetaData = metadata.getFileMetaData();
         MessageType originalSchema = fileMetaData.getSchema();
-        List<Column> hiveColumns = null;
-        if (pluginConfig.hasPath(CatalogTableUtil.SCHEMA.key())){
-            log.info("custom schema from hive " + pluginConfig.getString("schema"));
-            hiveColumns = CatalogTableUtil.buildWithConfig(pluginConfig).getCatalogTable().getTableSchema()
-                .getColumns();
+        Object[] hiveColumns = null;
+        if (pluginConfig.hasPath(CatalogTableUtil.COLUMNS.key())){
+            log.info(">>> custom schema from hive: " + pluginConfig.getAnyRefList(CatalogTableUtil.COLUMNS.key()).toString());
+            hiveColumns =  pluginConfig.getAnyRefList(COLUMNS.key()).toArray();
         }
 
         if (readColumns.isEmpty()) {
-            for (int i = 0; i < originalSchema.getFieldCount(); i++) {
-                readColumns.add(hiveColumns == null ? originalSchema.getFieldName(i) : hiveColumns.get(i).getName());
+            if (hiveColumns != null) {
+                for (Object hiveColumn : hiveColumns) {
+                    readColumns.add(hiveColumn.toString());
+                }
+            } else {
+                for (int i = 0; i < originalSchema.getFieldCount(); i++) {
+                    readColumns.add(originalSchema.getFieldName(i));
+                }
             }
         }
+
         String[] fields = new String[readColumns.size()];
         SeaTunnelDataType<?>[] types = new SeaTunnelDataType[readColumns.size()];
         indexes = new int[readColumns.size()];
-        for (int i = 0; i < readColumns.size(); i++) {
+        for (int i = 0; i < originalSchema.getFieldCount(); i++) {
             fields[i] = readColumns.get(i);
             Type type = originalSchema.getType(fields[i]);
             int fieldIndex = originalSchema.getFieldIndex(fields[i]);
             indexes[i] = fieldIndex;
             types[i] = parquetType2SeaTunnelType(type);
         }
+
+        // hive schema比orc文件schema长
+        if (hiveColumns != null && originalSchema.getFieldCount() < hiveColumns.length) {
+            SeaTunnelRowType userDefinedSchema =
+                CatalogTableUtil.buildWithConfig(pluginConfig).getSeaTunnelRowType();
+            for (int i = originalSchema.getFieldCount(); i < hiveColumns.length; i++) {
+                indexes[i] = -1;
+                fields[i] = readColumns.get(i);
+                types[i] = userDefinedSchema.getFieldType(userDefinedSchema.indexOf(hiveColumns[i].toString()));
+            }
+        }
+
         seaTunnelRowType = new SeaTunnelRowType(fields, types);
         seaTunnelRowTypeWithPartition = mergePartitionTypes(path, seaTunnelRowType);
         return getActualSeaTunnelRowTypeInfo();

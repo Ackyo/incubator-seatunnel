@@ -18,6 +18,7 @@
 package org.apache.seatunnel.connectors.seatunnel.hive.source;
 
 import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
+import static org.apache.seatunnel.api.table.catalog.CatalogTableUtil.COLUMNS;
 import static org.apache.seatunnel.api.table.catalog.CatalogTableUtil.SCHEMA;
 import static org.apache.seatunnel.connectors.seatunnel.file.config.BaseSourceConfig.FILE_FORMAT_TYPE;
 import static org.apache.seatunnel.connectors.seatunnel.file.config.BaseSourceConfig.FILE_PATH;
@@ -31,6 +32,7 @@ import java.net.URISyntaxException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
@@ -123,15 +125,16 @@ public class HiveSource extends BaseHdfsFileSource {
         String inputFormat = tableInformation.getSd().getInputFormat();
 
         Map<String, Object> schema = parseSchema(tableInformation);
-        for (FieldSchema partitionKey : tableInformation.getPartitionKeys()) {
-            ((LinkedHashMap<String, Object>) schema.get("fields")).put(partitionKey.getName(), partitionKey.getType());
-        }
 
         ConfigRenderOptions options = ConfigRenderOptions.concise();
         String render = pluginConfig.root().render(options);
         ObjectNode jsonNodes = JsonUtils.parseObject(render);
         jsonNodes.putPOJO(SCHEMA.key(), schema);
         pluginConfig = ConfigFactory.parseString(jsonNodes.toString());
+
+        List<String> fieldNames = tableInformation.getSd().getCols().stream().map(FieldSchema::getName).collect(Collectors.toList());
+        pluginConfig = pluginConfig.withValue(COLUMNS.key(), ConfigValueFactory.fromIterable(fieldNames));
+
         if (TEXT_INPUT_FORMAT_CLASSNAME.equals(inputFormat)) {
             pluginConfig =
                     pluginConfig.withValue(

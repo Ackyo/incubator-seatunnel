@@ -59,6 +59,12 @@ public class CatalogTableUtil implements Serializable {
     public static final Option<Map<String, String>> SCHEMA =
             Options.key("schema").mapType().noDefaultValue().withDescription("SeaTunnel Schema");
 
+    public static final Option<List<String>> COLUMNS =
+        Options.key("columns")
+            .listType()
+            .noDefaultValue()
+            .withDescription("SeaTunnel Schema Fields");
+
     public static final Option<String> FIELDS =
             Options.key("schema.fields")
                     .stringType()

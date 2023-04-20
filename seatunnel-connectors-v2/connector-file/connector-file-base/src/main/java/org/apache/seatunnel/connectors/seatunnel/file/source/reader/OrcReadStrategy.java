@@ -17,6 +17,7 @@
 
 package org.apache.seatunnel.connectors.seatunnel.file.source.reader;
 
+import static org.apache.seatunnel.api.table.catalog.CatalogTableUtil.COLUMNS;
 import static org.apache.seatunnel.connectors.seatunnel.file.sink.writer.OrcWriteStrategy.buildFieldWithRowType;
 
 import java.io.IOException;
@@ -53,7 +54,6 @@ import org.apache.orc.storage.ql.exec.vector.UnionColumnVector;
 import org.apache.orc.storage.ql.exec.vector.VectorizedRowBatch;
 import org.apache.seatunnel.api.source.Collector;
 import org.apache.seatunnel.api.table.catalog.CatalogTableUtil;
-import org.apache.seatunnel.api.table.catalog.Column;
 import org.apache.seatunnel.api.table.type.ArrayType;
 import org.apache.seatunnel.api.table.type.BasicType;
 import org.apache.seatunnel.api.table.type.DecimalType;
@@ -84,6 +84,7 @@ public class OrcReadStrategy extends AbstractReadStrategy {
         }
         Configuration configuration = getConfiguration();
         Path filePath = new Path(path);
+        this.getSeaTunnelRowTypeInfo(hadoopConf, path); // files have different structure with hive
         Map<String, String> partitionsMap = parsePartitionsByPath(path);
         OrcFile.ReaderOptions readerOptions = OrcFile.readerOptions(configuration);
         try (Reader reader = OrcFile.createReader(filePath, readerOptions)) {
@@ -133,18 +134,19 @@ public class OrcReadStrategy extends AbstractReadStrategy {
         OrcFile.ReaderOptions readerOptions = OrcFile.readerOptions(configuration);
         Path dstDir = new Path(path);
         try (Reader reader = OrcFile.createReader(dstDir, readerOptions)) {
-            List<Column> hiveColumns = null;
-            if (pluginConfig.hasPath(CatalogTableUtil.SCHEMA.key())){
-                log.info("custom schema from hive: " + pluginConfig.getConfig("schema").toString());
-                hiveColumns = CatalogTableUtil.buildWithConfig(pluginConfig).getCatalogTable().getTableSchema()
-                    .getColumns();
+            Object[] hiveColumns = null;
+            if (pluginConfig.hasPath(CatalogTableUtil.COLUMNS.key())){
+                log.info(">>> custom schema from hive: " + pluginConfig.getAnyRefList(CatalogTableUtil.COLUMNS.key()).toString());
+                hiveColumns =  pluginConfig.getAnyRefList(COLUMNS.key()).toArray();
             }
 
             TypeDescription schema = reader.getSchema();
             List<String> fieldNames = new ArrayList<>(schema.getFieldNames());
+            log.info(">>> origin field names from file" + Arrays.toString(fieldNames.toArray()));
             if (hiveColumns != null) {
-                for (int i = 0; i < fieldNames.size(); i++) {
-                    fieldNames.set(i, hiveColumns.get(i).getName());
+                fieldNames = new ArrayList<>();
+                for (Object hiveColumn : hiveColumns) {
+                    fieldNames.add(hiveColumn.toString());
                 }
             }
 
@@ -153,7 +155,7 @@ public class OrcReadStrategy extends AbstractReadStrategy {
             }
             String[] fields = new String[readColumns.size()];
             SeaTunnelDataType<?>[] types = new SeaTunnelDataType[readColumns.size()];
-            for (int i = 0; i < readColumns.size(); i++) {
+            for (int i = 0; i < schema.getFieldNames().size(); i++) {
                 fields[i] = readColumns.get(i);
                 int index = fieldNames.indexOf(readColumns.get(i));
                 if (index == -1) {
@@ -165,6 +167,17 @@ public class OrcReadStrategy extends AbstractReadStrategy {
                 }
                 types[i] = orcDataType2SeaTunnelDataType(schema.getChildren().get(index));
             }
+
+            // hive schema比orc文件schema长
+            if (schema.getFieldNames().size() < fieldNames.size()) {
+                SeaTunnelRowType userDefinedSchema =
+                    CatalogTableUtil.buildWithConfig(pluginConfig).getSeaTunnelRowType();
+                for (int i = schema.getFieldNames().size(); i < fieldNames.size(); i++) {
+                    fields[i] = readColumns.get(i);
+                    types[i] = userDefinedSchema.getFieldType(userDefinedSchema.indexOf(fieldNames.get(i)));
+                }
+            }
+
             seaTunnelRowType = new SeaTunnelRowType(fields, types);
             seaTunnelRowTypeWithPartition = mergePartitionTypes(path, seaTunnelRowType);
             return getActualSeaTunnelRowTypeInfo();
